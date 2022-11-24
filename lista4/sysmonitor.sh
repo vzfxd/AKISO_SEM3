@@ -1,8 +1,8 @@
 #!/bin/bash
 
 function avg {
-	sum=0
-	arr=("$@")
+	local sum=0
+	local arr=("$@")
 	for i in "${arr[@]}"
 	do
 		sum=$(($sum+$i))
@@ -12,6 +12,7 @@ function avg {
 }
 
 function chart_generator {
+
 
 }
 
