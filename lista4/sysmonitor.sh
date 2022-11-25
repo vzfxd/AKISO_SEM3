@@ -1,5 +1,16 @@
 #!/bin/bash
 
+bytes_sent=()
+bytes_recieved=()
+
+download_speed_arr=()
+upload_speed_arr=()
+
+avg_download_speed_arr=()
+avg_upload_speed_arr=()
+
+counter=0
+
 function avg {
 	local sum=0
 	local arr=("$@")
@@ -12,21 +23,54 @@ function avg {
 }
 
 function chart_generator {
+	if [ $(( ${#download_speed_arr[@]}-5 )) -lt 0 ]
+	then
+		slice=0
+	else
+		slice=$(( ${#download_speed_arr[@]}-5 ))
+	fi
 
+	local dow_jump=50000
+	local up_jump=1000
 
+	local d_speed=(${download_speed_arr[@]:$slice})
+	local u_speed=(${upload_speed_arr[@]:$slice})
+	local avg_d_speed=(${avg_download_speed_arr[@]:$slice})
+	local avg_u_speed=(${avg_upload_speed_arr[@]:$slice})
+
+	printf "DOWNLOAD SPEED HISTORY\n"
+	for i in "${!d_speed[@]}"
+	do
+		printf "█%.0s" $(seq 0 $dow_jump ${d_speed[$i]}) ; bytes=$(bytes_convert "${d_speed[$i]}") ; printf " ${bytes}\n"
+	done
+	printf "\n\nAVERAGE DOWNLOAD SPEED HISTORY\n"
+	for i in "${!avg_d_speed[@]}"
+	do
+		printf "█%.0s" $(seq 0 $dow_jump ${avg_d_speed[$i]}) ; bytes=$(bytes_convert "${avg_d_speed[$i]}") ; printf " ${bytes}\n"
+	done
+	printf "\n\nUPLOAD SPEED HISTORY\n"
+	for i in "${!u_speed[@]}"
+	do
+		printf "█%.0s" $(seq 0 $up_jump ${u_speed[$i]}) ; bytes=$(bytes_convert "${u_speed[$i]}") ; printf " ${bytes}\n"
+	done
+	printf "\n\nAVERAGE UPLOAD SPEED HISTORY\n"
+	for i in "${!avg_u_speed[@]}"
+	do
+		printf "█%.0s" $(seq 0 $up_jump ${avg_u_speed[$i]}) ; bytes=$(bytes_convert "${avg_u_speed[$i]}") ; printf " ${bytes}\n"
+	done
 }
 
-
-bytes_sent=()
-bytes_recieved=()
-
-download_speed_arr=()
-upload_speed_arr=()
-
-avg_download_speed_arr=()
-avg_upload_speed_arr=()
-
-counter=0
+function bytes_convert {
+	if [ $(($1/1000000)) -gt 0 ]
+	then
+		result=$(echo "scale=2 ; $1/1000000" | bc) ; echo "${result} MB"
+	elif [ $(($1/1000)) -gt 0 ]
+	then
+		result=$(echo "scale=2 ; $1/1000" | bc) ; echo "${result} KB"
+	else
+		echo "${1} B"
+	fi
+}
 
 while true
 do
@@ -48,6 +92,9 @@ do
 
 	cpu_usage=()
 	cpu_freq=()
+	core_num=$((cat /proc/stat | grep cpu | wc -l)-1))
+	
+	echo "${core_num}"
 
 	for i in {0..7}
 	do
@@ -71,8 +118,7 @@ do
 
 	fi
 
-	echo "download speed: ${download_speed}   ||  upload speed: ${upload_speed}"
-	echo "average download: ${avg_download_speed}  ||  average upload: ${avg_upload_speed}"
+	chart_generator
 
 	counter=$((${counter}+1))
 	sleep 1
