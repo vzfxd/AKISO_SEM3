@@ -9,6 +9,10 @@ upload_speed_arr=()
 avg_download_speed_arr=()
 avg_upload_speed_arr=()
 
+cpu=()
+core_num=$(($(cat /proc/stat | grep cpu | wc -l)-1))
+
+
 counter=0
 
 function avg {
@@ -69,12 +73,50 @@ function chart_generator {
 }
 
 function cpu_load_generator {
+	local cpu_freq=($(cat /proc/cpuinfo | grep MHz | awk '{print $4}'))
+	local cpu_usage=()
+
+	for i in $(seq 0 $((${core_num}-1)))
+	do
+		local c_idle=$(cat /proc/stat | grep cpu${i} | awk '{print $5}')
+		local c_iowait=$(cat /proc/stat | grep cpu${i} | awk '{print $6}')
+		local c_user=$(cat /proc/stat | grep cpu${i} | awk '{print $2}')
+		local c_nice=$(cat /proc/stat | grep cpu${i} | awk '{print $3}')
+		local c_system=$(cat /proc/stat | grep cpu${i} | awk '{print $4}')
+		local c_irq=$(cat /proc/stat | grep cpu${i} | awk '{print $7}')
+		local c_softirq=$(cat /proc/stat | grep cpu${i} | awk '{print $8}')
+		local c_steal=$(cat /proc/stat | grep cpu${i} | awk '{print $9}')
+
+		if [ ${counter} -gt 0 ]
+		then
+			local prev_idle=${cpu[$i]}
+			local prev_non_idle=${cpu[$(($i+${core_num}))]}
+			local prev_total=$((${prev_idle}+${prev_non_idle}))
+		fi
+
+		local total_idle=$((${c_idle}+${c_iowait}))
+		local total_non_idle=$(("${c_user}+${c_nice}+${c_system}+${c_irq}+${c_softirq}+${c_steal}"))
+		local total=$((${total_idle}+${total_non_idle}))
+
+		cpu[$i]=${total_idle}
+		cpu[$(($i+${core_num}))]=${total_non_idle}
+
+
+		if [ ${counter} -gt 0 ]
+		then
+			local totald=$((${total}-${prev_total}))
+			local idled=$((${total_idle}-${prev_idle}))
+			cpu_usage[$i]=$(echo "scale=2 ; (${totald}-${idled})*100/${totald}" | bc)
+		fi
+	done
+
 	for i in "${!cpu_usage[@]}"
 	do
 		local usage=$(echo "${cpu_usage[$i]} - (${cpu_usage[$i]} % 1)" | bc )
 		local rest=$(echo "100-${usage}" | bc)
-		printf "core$i [" ; tput setaf 2 ; printf "+%.0s" $(seq 1 "${cpu_usage[$i]}") ; tput setaf 231 ; printf ".%.0s" $(seq 1 ${rest} ) ; \
-		printf "] ${cpu_usage[$i]}\n"
+		local freq=$(echo "scale=2 ; ${cpu_freq[$i]}/1000" | bc)
+		printf "core$i ${cpu_usage[$i]}%% [" ; tput setaf 2 ; printf "+%.0s" $(seq 1 "${cpu_usage[$i]}") ; tput setaf 231 ; printf ".%.0s" $(seq 1 ${rest} ) ; \
+		printf "] ${freq} Ghz\n"
 	done
 }
 
@@ -99,16 +141,14 @@ function uptime_convert {
 }
 
 function generate_ui {
-	clear
 	local ds=$(bytes_convert "${download_speed}")
 	local us=$(bytes_convert "${upload_speed}")
 	local ads=$(bytes_convert "${avg_download_speed}")
 	local aus=$(bytes_convert "${avg_upload_speed}")
 	local uptime=$(uptime_convert "${total_uptime}")
 	local result="DOWNLOAD_SPEED|AVG_DS|UPLOAD_SPEED|AVG_US|BATTERY|UPTIME|SYS_LOAD|MEM\n"
-	result+="${ds}|${ads}|${us}|${aus}|${battery}|${uptime}|${load}|${memory}\n"
+	result+="${ds}\\s|${ads}\\s|${us}\\s|${aus}\\s|${battery}%%|${uptime}|${load}|${memory}\n"
 	result=$(printf "${result}" | column -t -s '|' )
-	cpu_load_generator
 	printf "\n${result}\n"
 	chart_generator
 }
@@ -124,16 +164,6 @@ do
 	battery=$(echo "100 * $(cat /sys/class/power_supply/BAT1/energy_now) / $(cat /sys/class/power_supply/BAT1/energy_full)" | bc)
 	memory=$(cat /proc/meminfo | grep -i -w active: | sed 's/.*://' | sed 's/ //g')
 	load=$(cat /proc/loadavg | cut -d ' ' -f -3)
-
-	cpu_usage=()
-	cpu_freq=()
-	core_num=$(($(cat /proc/stat | grep cpu | wc -l)-1))
-
-	for i in $(seq 0 $((${core_num}-1)))
-	do
-		cpu_usage+=($(grep cpu$i /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {print usage}'))
-		cpu_freq+=($(sudo cat /sys/devices/system/cpu/cpu$i/cpufreq/cpuinfo_cur_freq))
-	done
 
 	if [ ${#bytes_sent[@]} -gt 1 ] && [ ${#bytes_recieved[@]} -gt 1 ]
 	then
@@ -151,6 +181,8 @@ do
 
 	fi
 
+	clear
+	cpu_load_generator
 	if [ ${counter} -gt 0 ]
 	then
 		generate_ui
